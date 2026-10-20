@@ -1,0 +1,34 @@
+# Demo configuration for the ticket-index skill.
+# Run from this directory:
+#   python ../../skills/ticket-index/scripts/ticket_index.py check
+
+[settings]
+title = "Demo Ticket Index"
+tickets_dir = ".tickets"
+output_dir = "docs/tickets"
+id_pattern = "demo-[0-9a-z]{4}"
+summary_max_chars = 160
+placeholder_assignees = ["", "-", "team", "tbd", "todo", "unassigned"]
+
+[[modules]]
+id = "core"
+title = "Core Platform"
+scope = "Runtime, storage, and scheduling"
+
+[[modules]]
+id = "api"
+title = "Public API"
+scope = "Contracts, endpoints, and client compatibility"
+
+[[modules]]
+id = "docs"
+title = "Documentation"
+scope = "Guides, references, and onboarding"
+
+[tickets]
+"demo-a1b2" = { module = "core", summary = "Map the decisions and delivery slices needed for the first end-to-end run" }
+"demo-b2c3" = { module = "core", summary = "Fix where execution state lives and how a restart recovers it" }
+"demo-c3d4" = { module = "core", summary = "Implement persisted execution records behind the scheduler" }
+"demo-d4e5" = { module = "api", summary = "Expose execution submission and status through the public contract" }
+"demo-e5f6" = { module = ["docs", "api"], summary = "Give new users a runnable first-submission walkthrough" }
+"demo-f6a7" = { module = "api", summary = "Standardise failure codes and their retry semantics across clients" }

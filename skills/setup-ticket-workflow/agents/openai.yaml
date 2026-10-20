@@ -1,0 +1,5 @@
+interface:
+  display_name: "Setup Ticket Workflow"
+  short_description: "Configure a repo for local Markdown tickets and the generated index"
+policy:
+  allow_implicit_invocation: false

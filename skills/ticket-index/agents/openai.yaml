@@ -1,0 +1,3 @@
+interface:
+  display_name: "Ticket Index"
+  short_description: "Keep a layered, module-based index over many tickets"

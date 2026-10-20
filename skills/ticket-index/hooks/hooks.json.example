@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "hooks": {
+    "afterShellExecution": [
+      {
+        "command": "python .cursor/skills/ticket-index/hooks/ticket-index-sync.py after-shell",
+        "timeout": 60
+      }
+    ],
+    "afterFileEdit": [
+      {
+        "command": "python .cursor/skills/ticket-index/hooks/ticket-index-sync.py after-file-edit",
+        "timeout": 60
+      }
+    ]
+  }
+}
