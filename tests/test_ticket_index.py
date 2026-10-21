@@ -439,6 +439,123 @@ scope = "Scope"
             ti.load_config(self.repo.config)
         self.assertIn("summary_max_chars", str(context.exception))
 
+    def test_deep_hierarchy_renders_without_recursion(self) -> None:
+        ticket_count = 1500
+        entries: dict[str, str] = {}
+        previous = None
+        for number in range(ticket_count):
+            ticket_id = f"demo-{number:04x}"
+            self.repo.ticket(ticket_id, title=f"Ticket {number}", parent=previous)
+            entries[ticket_id] = self.entry()
+            previous = ticket_id
+        self.repo.write_config(entries)
+
+        index = self.repo.load()
+        code, out, err = self.repo.run(lambda: ti.cmd_render(index))
+
+        self.assertEqual(code, 0, err)
+        module_page = self.repo.read("docs/tickets/modules/core.md")
+        self.assertEqual(module_page.count("**Ticket "), ticket_count)
+
+    def test_module_rendering_reuses_sorted_ticket_view(self) -> None:
+        module_lines = "\n".join(
+            f'[[modules]]\nid = "area-{number}"\ntitle = "Area {number}"\nscope = "Scope"'
+            for number in range(8)
+        )
+        modules = module_lines + "\n"
+        entries: dict[str, str] = {}
+        for number in range(8):
+            ticket_id = f"demo-{number:04x}"
+            self.repo.ticket(ticket_id)
+            entries[ticket_id] = self.entry(module=f"area-{number}")
+        self.repo.write_config(entries, modules=modules)
+        index = self.repo.load()
+
+        sort_calls = 0
+        original_sorted_tickets = index.sorted_tickets
+
+        def count_sorted_tickets():
+            nonlocal sort_calls
+            sort_calls += 1
+            return original_sorted_tickets()
+
+        index.sorted_tickets = count_sorted_tickets
+        expected = index.expected_files()
+
+        self.assertEqual(len(expected), 9)
+        self.assertLessEqual(sort_calls, 2)
+
+    def test_render_refreshes_ticket_snapshot_after_waiting_for_lock(self) -> None:
+        self.repo.ticket("demo-a1b2", title="Original title")
+        self.repo.write_config({"demo-a1b2": self.entry()})
+        stale_index = self.repo.load()
+        self.repo.ticket("demo-a1b2", title="Updated title")
+
+        code, out, err = self.repo.run(lambda: ti.cmd_render(stale_index))
+
+        self.assertEqual(code, 0, err)
+        module_page = self.repo.read("docs/tickets/modules/core.md")
+        self.assertIn("**Updated title**", module_page)
+        self.assertNotIn("**Original title**", module_page)
+
+    def test_render_lock_serializes_threads(self) -> None:
+        import threading
+
+        attempting = threading.Event()
+        acquired = threading.Event()
+
+        def wait_for_lock() -> None:
+            attempting.set()
+            with ti.render_lock(self.repo.root):
+                acquired.set()
+
+        with ti.render_lock(self.repo.root):
+            worker = threading.Thread(target=wait_for_lock)
+            worker.start()
+            self.assertTrue(attempting.wait(timeout=2))
+            self.assertFalse(acquired.wait(timeout=0.1))
+
+        self.assertTrue(acquired.wait(timeout=2))
+        worker.join(timeout=2)
+        self.assertFalse(worker.is_alive())
+
+    def test_concurrent_render_processes_leave_a_current_index(self) -> None:
+        import subprocess
+        import sys
+
+        entries: dict[str, str] = {}
+        for number in range(40):
+            ticket_id = f"demo-{number:04x}"
+            parent = f"demo-{number - 1:04x}" if number else None
+            self.repo.ticket(ticket_id, parent=parent)
+            entries[ticket_id] = self.entry()
+        self.repo.write_config(entries)
+        command = [
+            sys.executable,
+            str(SCRIPT),
+            "render",
+            "--config",
+            str(self.repo.config),
+        ]
+        processes = [
+            subprocess.Popen(
+                command,
+                cwd=self.repo.root,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                encoding="utf-8",
+            )
+            for _ in range(2)
+        ]
+        results = [process.communicate(timeout=20) for process in processes]
+
+        for process, (stdout, stderr) in zip(processes, results):
+            self.assertEqual(process.returncode, 0, stdout + stderr)
+        code, out, err = self.repo.run(lambda: ti.cmd_check(self.repo.load()))
+        self.assertEqual(code, 0, err)
+        self.assertIn("40 tickets", out)
+
 
 if __name__ == "__main__":
     unittest.main()

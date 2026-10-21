@@ -19,12 +19,17 @@ from __future__ import annotations
 
 import argparse
 import difflib
+import hashlib
 import os
 import re
 import sys
+import tempfile
+import threading
 from collections import Counter, defaultdict
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Iterator
 
 try:
     import tomllib
@@ -38,6 +43,47 @@ ACTIVE_STATUSES = {"open", "in_progress"}
 STATUS_ORDER = {"in_progress": 0, "open": 1, "closed": 2}
 DEFAULT_PLACEHOLDERS = frozenset({"", "-", "team", "tbd", "todo", "unassigned"})
 MODULE_ID_RE = re.compile(r"[a-z0-9][a-z0-9-]*")
+_RENDER_LOCKS: dict[str, threading.RLock] = {}
+_RENDER_LOCKS_GUARD = threading.Lock()
+
+
+@contextmanager
+def render_lock(root: Path) -> Iterator[None]:
+    """Serialize renders targeting the same repository across threads and processes."""
+    lock_root = Path(tempfile.gettempdir()) / "ticket-index-render-locks"
+    normalized_root = str(root.resolve())
+    if os.name == "nt":
+        normalized_root = normalized_root.casefold()
+    lock_name = hashlib.sha256(normalized_root.encode("utf-8")).hexdigest() + ".lock"
+    lock_path = lock_root / lock_name
+    key = str(lock_path)
+    with _RENDER_LOCKS_GUARD:
+        lock = _RENDER_LOCKS.setdefault(key, threading.RLock())
+    with lock:
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        with lock_path.open("a+b") as stream:
+            if os.name == "nt":
+                import msvcrt
+
+                stream.seek(0, os.SEEK_END)
+                if stream.tell() == 0:
+                    stream.write(b"0")
+                    stream.flush()
+                stream.seek(0)
+                msvcrt.locking(stream.fileno(), msvcrt.LK_LOCK, 1)
+                try:
+                    yield
+                finally:
+                    stream.seek(0)
+                    msvcrt.locking(stream.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                import fcntl
+
+                fcntl.flock(stream.fileno(), fcntl.LOCK_EX)
+                try:
+                    yield
+                finally:
+                    fcntl.flock(stream.fileno(), fcntl.LOCK_UN)
 
 
 # ---------------------------------------------------------------------------
@@ -284,6 +330,12 @@ class Index:
         self.tickets: dict[str, Ticket] = {}
         self.errors: list[str] = []
         self.warnings: list[str] = []
+        self._sorted_cache: list[Ticket] | None = None
+        self._module_tickets_cache: dict[str, list[Ticket]] | None = None
+        self._module_memberships_cache: dict[str, list[Ticket]] | None = None
+        self._module_stats_cache: dict[str, dict[str, int]] = {}
+        self._unresolved_cache: dict[str, list[str]] = {}
+        self._modules_by_id = {module.id: module for module in self.modules}
         try:
             self.id_pattern = re.compile(self.settings.id_pattern)
         except re.error as exc:
@@ -398,23 +450,42 @@ class Index:
         return self.entry(ticket_id)["summary"]
 
     def module_title(self, module_id: str) -> str:
-        for module in self.modules:
-            if module.id == module_id:
-                return module.title
-        return module_id
+        module = self._modules_by_id.get(module_id)
+        return module.title if module else module_id
 
     def sorted_tickets(self) -> list[Ticket]:
-        return [self.tickets[key] for key in sorted(self.tickets)]
+        if self._sorted_cache is None:
+            self._sorted_cache = [self.tickets[key] for key in sorted(self.tickets)]
+        return self._sorted_cache
+
+    def _group_module_tickets(self) -> tuple[dict[str, list[Ticket]], dict[str, list[Ticket]]]:
+        if self._module_tickets_cache is not None and self._module_memberships_cache is not None:
+            return self._module_tickets_cache, self._module_memberships_cache
+
+        primary: dict[str, list[Ticket]] = {module.id: [] for module in self.modules}
+        memberships: dict[str, list[Ticket]] = {module.id: [] for module in self.modules}
+        for ticket in self.sorted_tickets():
+            modules = self.modules_of(ticket.id)
+            if modules:
+                primary.setdefault(modules[0], []).append(ticket)
+                for module_id in modules:
+                    memberships.setdefault(module_id, []).append(ticket)
+        self._module_tickets_cache = primary
+        self._module_memberships_cache = memberships
+        return primary, memberships
 
     def module_tickets(self, module_id: str) -> list[Ticket]:
-        return [ticket for ticket in self.sorted_tickets() if self.primary(ticket.id) == module_id]
+        primary, _ = self._group_module_tickets()
+        return primary.get(module_id, [])
 
     def unresolved(self, ticket: Ticket) -> list[str]:
-        return [
-            dep
-            for dep in ticket.deps
-            if dep not in self.tickets or self.tickets[dep].status != "closed"
-        ]
+        if ticket.id not in self._unresolved_cache:
+            self._unresolved_cache[ticket.id] = [
+                dep
+                for dep in ticket.deps
+                if dep not in self.tickets or self.tickets[dep].status != "closed"
+            ]
+        return self._unresolved_cache[ticket.id]
 
     def is_placeholder_assignee(self, ticket: Ticket) -> bool:
         return ticket.assignee.strip().lower() in self.settings.placeholders
@@ -458,7 +529,8 @@ class Index:
     def cross_relations(self) -> list[tuple[str, str, str]]:
         relations: list[tuple[str, str, str]] = []
         seen_links: set[tuple[str, str]] = set()
-        for ticket in self.sorted_tickets():
+        tickets = self._sorted_cache if self._sorted_cache is not None else self.sorted_tickets()
+        for ticket in tickets:
             for dep in ticket.deps:
                 if dep in self.tickets and self.primary(dep) != self.primary(ticket.id):
                     relations.append((ticket.id, "depends on", dep))
@@ -528,31 +600,41 @@ class Index:
             return ["(no tickets in this module)"]
 
         lines: list[str] = []
-
-        def walk(ticket: Ticket, depth: int, stack: frozenset[str]) -> None:
-            cycle = ticket.id in stack
-            lines.append(self.render_line(ticket, depth, module_id, start, cycle=cycle))
-            if cycle:
-                return
-            next_stack = stack | {ticket.id}
-            for child in children.get(ticket.id, []):
-                walk(child, depth + 1, next_stack)
-
+        visited: set[str] = set()
         for root in roots:
-            walk(root, 0, frozenset())
+            stack: list[tuple[Ticket, int, bool]] = [(root, 0, False)]
+            active: set[str] = set()
+            while stack:
+                ticket, depth, exiting = stack.pop()
+                if exiting:
+                    active.remove(ticket.id)
+                    continue
+                if ticket.id in active:
+                    lines.append(self.render_line(ticket, depth, module_id, start, cycle=True))
+                    continue
+                if ticket.id in visited:
+                    continue
+                lines.append(self.render_line(ticket, depth, module_id, start))
+                active.add(ticket.id)
+                visited.add(ticket.id)
+                stack.append((ticket, depth, True))
+                for child in reversed(children.get(ticket.id, [])):
+                    stack.append((child, depth + 1, False))
         return lines
 
     def module_stats(self, module_id: str) -> dict[str, int]:
-        tickets = self.module_tickets(module_id)
-        counts = Counter(ticket.status for ticket in tickets)
-        return {
-            "total": len(tickets),
-            "open": counts.get("open", 0),
-            "in_progress": counts.get("in_progress", 0),
-            "closed": counts.get("closed", 0),
-            "active": counts.get("open", 0) + counts.get("in_progress", 0),
-            "maps": sum(1 for ticket in tickets if ticket.is_map),
-        }
+        if module_id not in self._module_stats_cache:
+            tickets = self.module_tickets(module_id)
+            counts = Counter(ticket.status for ticket in tickets)
+            self._module_stats_cache[module_id] = {
+                "total": len(tickets),
+                "open": counts.get("open", 0),
+                "in_progress": counts.get("in_progress", 0),
+                "closed": counts.get("closed", 0),
+                "active": counts.get("open", 0) + counts.get("in_progress", 0),
+                "maps": sum(1 for ticket in tickets if ticket.is_map),
+            }
+        return self._module_stats_cache[module_id]
 
     def generated_note(self, start: Path) -> str:
         config_link = relative_link(self.settings.config_path, start)
@@ -582,10 +664,11 @@ class Index:
             *self.render_tree(module.id, start),
         ]
 
+        _, memberships = self._group_module_tickets()
         referenced = [
             ticket
-            for ticket in self.sorted_tickets()
-            if module.id in self.modules_of(ticket.id) and self.primary(ticket.id) != module.id
+            for ticket in memberships.get(module.id, [])
+            if self.primary(ticket.id) != module.id
         ]
         if referenced:
             lines += ["", "## Cross-module membership", ""]
@@ -872,6 +955,16 @@ def cmd_render(index: Index) -> int:
         print("Config has errors; nothing was written.", file=sys.stderr)
         return 1
 
+    with render_lock(index.root):
+        fresh_index = Index(load_config(index.settings.config_path))
+        if fresh_index.errors:
+            print_problems(fresh_index.errors, fresh_index.warnings)
+            print("Config has errors; nothing was written.", file=sys.stderr)
+            return 1
+        return _render_locked(fresh_index)
+
+
+def _render_locked(index: Index) -> int:
     written = 0
     unchanged = 0
     expected = index.expected_files()

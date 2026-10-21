@@ -12,8 +12,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 import sys
+import tempfile
 from pathlib import Path
 
 KIT_ROOT = Path(__file__).resolve().parents[1]
@@ -43,8 +45,13 @@ def parse_skills(value: str | None) -> list[str]:
     return requested
 
 
-def copy_skills(source_root: Path, dest_root: Path, names: list[str], force: bool) -> list[str]:
-    copied: list[str] = []
+def copy_skills(
+    source_root: Path,
+    dest_root: Path,
+    names: list[str],
+    force: bool,
+    hooks: tuple[Path, str] | None = None,
+) -> list[str]:
     conflicts = [name for name in names if (dest_root / name).exists()]
     if conflicts and not force:
         raise SystemExit(
@@ -52,31 +59,67 @@ def copy_skills(source_root: Path, dest_root: Path, names: list[str], force: boo
             + ", ".join(conflicts)
             + ". Re-run with --force to replace them."
         )
-    dest_root.mkdir(parents=True, exist_ok=True)
-    for name in names:
-        source = source_root / name
-        destination = dest_root / name
-        if destination.exists():
-            shutil.rmtree(destination)
-        shutil.copytree(
-            source,
-            destination,
-            ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
-        )
-        copied.append(name)
-    return copied
+
+    dest_root.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="ticket-index-install-", dir=dest_root.parent) as temp:
+        transaction = Path(temp)
+        staged_skills = transaction / "skills"
+        staged_skills.mkdir()
+        backups = transaction / "backups"
+        backups.mkdir()
+        for name in names:
+            shutil.copytree(
+                source_root / name,
+                staged_skills / name,
+                ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
+            )
+
+        staged_hook: Path | None = None
+        if hooks is not None:
+            hooks_path, content = hooks
+            hooks_path.parent.mkdir(parents=True, exist_ok=True)
+            staged_hook = transaction / "hooks.json"
+            staged_hook.write_text(content, encoding="utf-8")
+
+        dest_root.mkdir(parents=True, exist_ok=True)
+        committed: list[tuple[Path, Path | None]] = []
+        try:
+            for name in names:
+                destination = dest_root / name
+                backup = backups / name if destination.exists() else None
+                if backup is not None:
+                    os.replace(destination, backup)
+                try:
+                    os.replace(staged_skills / name, destination)
+                except OSError:
+                    if backup is not None:
+                        os.replace(backup, destination)
+                    raise
+                committed.append((destination, backup))
+
+            if hooks is not None and staged_hook is not None:
+                os.replace(staged_hook, hooks[0])
+        except BaseException:
+            for destination, backup in reversed(committed):
+                if destination.exists():
+                    shutil.rmtree(destination)
+                if backup is not None and backup.exists():
+                    os.replace(backup, destination)
+            raise
+
+    return names
 
 
-def install_hooks(target: Path, dest_skills: Path) -> Path:
+def prepare_hooks(target: Path, dest_skills: Path) -> tuple[Path, str]:
     hooks_path = target / ".cursor" / "hooks.json"
-    hooks_path.parent.mkdir(parents=True, exist_ok=True)
-
     data: dict = {}
     if hooks_path.is_file():
         try:
             data = json.loads(hooks_path.read_text(encoding="utf-8-sig"))
         except json.JSONDecodeError as exc:
             raise SystemExit(f"{hooks_path} is not valid JSON: {exc}")
+    if not isinstance(data, dict):
+        raise SystemExit(f"{hooks_path}: top-level JSON value must be an object.")
 
     data.setdefault("version", 1)
     hooks = data.setdefault("hooks", {})
@@ -99,9 +142,21 @@ def install_hooks(target: Path, dest_skills: Path) -> Path:
         ):
             entries.append({"command": command})
 
-    hooks_path.write_text(
-        json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
-    )
+    return hooks_path, json.dumps(data, indent=2, ensure_ascii=False) + "\n"
+
+
+def install_hooks(target: Path, dest_skills: Path) -> Path:
+    hooks_path, content = prepare_hooks(target, dest_skills)
+    hooks_path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(
+        mode="w", encoding="utf-8", dir=hooks_path.parent, delete=False
+    ) as stream:
+        stream.write(content)
+        staged = Path(stream.name)
+    try:
+        os.replace(staged, hooks_path)
+    finally:
+        staged.unlink(missing_ok=True)
     return hooks_path
 
 
@@ -156,7 +211,8 @@ def main() -> int:
             "Re-run with --agent cursor (default) to install the hook."
         )
 
-    copied = copy_skills(SKILLS_ROOT, dest_skills, names, args.force)
+    hook_update = prepare_hooks(target, dest_skills) if args.install_hooks else None
+    copied = copy_skills(SKILLS_ROOT, dest_skills, names, args.force, hooks=hook_update)
 
     print(f"Installed {len(copied)} skill(s) into {dest_skills}")
     for name in copied:

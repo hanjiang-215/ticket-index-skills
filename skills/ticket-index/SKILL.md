@@ -172,6 +172,14 @@ python .cursor/skills/ticket-index/scripts/ticket_index.py check
 Commit `ticket-index.toml` together with every generated file. Exit code `0`
 and `OK: ...` means the index is consistent.
 
+Before opening a PR, update the branch from its target branch and re-render the index.
+If a rebase stops with conflicts, resolve `.tickets/*.md` and `ticket-index.toml` first;
+never hand-merge `docs/tickets/**` or choose one side's generated output. Once the source
+conflicts are resolved, run `render` and `check` to regenerate the conflicted output,
+stage the source and generated files, and continue the rebase. After the rebase finishes,
+run `render` and `check` again before pushing so the PR contains an index generated from
+the latest ticket sources.
+
 ## Module ownership
 
 A module is the **domain where the ticket's conclusion lands**, not the person

@@ -11,16 +11,22 @@ projects, listed below. The original license texts are reproduced in [`licenses/
 - Status in this repository: adapted copies. Prose, structure, and examples are derived
   from the upstream skills; edits in this repository add the local Markdown ticket
   contract, rename the setup entry point, and adjust cross-skill references.
+- The newly integrated `codebase-design`, `diagnosing-bugs`, and `prototype` skills, along
+  with their reference files and human-in-the-loop template, are pinned to upstream commit
+  [`5beb35b040e3de97e54fa9e386d7e42d15c295c2`](https://github.com/mattpocock/skills/commit/5beb35b040e3de97e54fa9e386d7e42d15c295c2).
 
 | Bundled skill | Upstream path |
 | --- | --- |
 | `code-review` | `skills/engineering/code-review` |
+| `codebase-design` | `skills/engineering/codebase-design` |
+| `diagnosing-bugs` | `skills/engineering/diagnosing-bugs` |
 | `domain-modeling` | `skills/engineering/domain-modeling` |
 | `grilling` | `skills/productivity/grilling` |
 | `handoff` | `skills/productivity/handoff` |
 | `implement` | `skills/engineering/implement` |
 | `implement-spec` | `skills/engineering/implement-spec` |
 | `pr` | `skills/engineering/pr` |
+| `prototype` | `skills/engineering/prototype` |
 | `tdd` | `skills/engineering/tdd` |
 | `to-spec` | `skills/engineering/to-spec` |
 | `to-tickets` | `skills/engineering/to-tickets` |
@@ -33,9 +39,10 @@ projects, listed below. The original license texts are reproduced in [`licenses/
 - Source: <https://github.com/humanlayer/skills> (`plugins/show-me/skills/show-me`)
 - License: MIT, copyright (c) 2026 HumanLayer — see
   [`licenses/MIT-humanlayer-show-me.txt`](licenses/MIT-humanlayer-show-me.txt)
-- Status in this repository: the `pr` skill's summary-visual menu is reproduced, almost
-  word for word, from `show-me`, aimed at a pull request diff instead of a live
-  conversation. Attribution is also recorded in `skills/pr/CREDITS.md`.
+- Author: Dex Horthy. The original `show-me` skill is from <https://github.com/humanlayer/skills>
+  (`plugins/show-me/skills/show-me`); the PR summary-visual menu is reproduced, almost
+  word for word, and aimed at a pull request diff instead of a live conversation.
+  Attribution is also recorded in `skills/pr/CREDITS.md`.
 
 ## Original work
 

@@ -1,10 +1,21 @@
 # Ticket Index Skills
 
+English | [简体中文](README.zh-CN.md)
+
+**Author / 作者:** hanjiang-215
+
 A ticket-driven workflow for AI coding agents working in large repositories.
 
-The centrepiece is **ticket-index**: a skill that keeps a generated, three-level indexover Markdown tickets so an agent can answer "what work exists, who owns it, and what can
-start now" without opening every ticket. Around it sit the skills that create, split,
-sequence, implement, and review that work.
+The centrepiece is **ticket-index**: a skill that maintains a generated, three-level
+index over Markdown tickets. It lets an agent answer "what work exists, who owns it,
+and what can start now" without opening every ticket. The other skills help create,
+split, sequence, implement, and review that work.
+
+## 中文简介
+
+Ticket Index Skills 为大型代码仓库中的 AI 编程代理提供基于 Markdown 任务票据的工作流。核心技能 `ticket-index` 会从票据生成确定性的三级索引，帮助代理快速找到现有工作、负责人和当前可开始的任务，而无需逐一打开所有票据。
+
+项目仅依赖 Python 3.11+ 标准库，并提供安装脚本、可选的 Cursor 自动同步钩子和完整示例。完整中文说明见 [README.zh-CN.md](README.zh-CN.md)。
 
 The core is Markdown files and one dependency-free Python script. The installer and the
 optional hook are standard-library Python as well.
@@ -85,7 +96,7 @@ disciplines that make each step reliable.
 | --- | --- | --- |
 | **ticket-index** | Core | Generates and validates the layered index over `.tickets/*.md` |
 | setup-ticket-workflow | Lifecycle | Configures a repo once: ticket store, index config, domain docs |
-| to-spec | Lifecycle | Turns the current conversation into a spec published to the tracker |
+| to-spec | Lifecycle | Creates a spec in `docs/specs/` and its tracking ticket |
 | to-tickets | Lifecycle | Breaks a spec into tracer-bullet tickets with blocking edges |
 | implement-spec | Lifecycle | Works a whole spec as a task graph on one integration branch |
 | implement | Lifecycle | Implements one ticket or a small piece of work, driving TDD |
@@ -93,8 +104,11 @@ disciplines that make each step reliable.
 | pr | Lifecycle | Writes a PR body with evidence and a merge-danger call |
 | wayfinder | Planning | Maps a large effort as decision tickets and resolves them one at a time |
 | grilling | Planning | Interviews the user until every branch of a design tree is settled |
+| prototype | Planning | Builds a disposable logic or UI prototype to settle a design question |
 | domain-modeling | Discipline | Sharpens `GLOSSARY.md` and ADRs while designing |
+| codebase-design | Discipline | Provides shared vocabulary for module depth, interfaces, seams, and adapters |
 | tdd | Discipline | Red-green-refactor loop with guidance on tests worth keeping |
+| diagnosing-bugs | Discipline | Builds a tight feedback loop to diagnose hard bugs and regressions |
 | writing-for-agents | Discipline | Writes skills, `AGENTS.md`, and docs that agents navigate predictably |
 | handoff | Discipline | Compacts a session into a handoff document for the next agent |
 
@@ -114,9 +128,15 @@ design. Both publish to the same ticket store. `to-tickets` gives every ticket i
 blocking edges, `ticket-index` renders the frontier, and `implement-spec` consumes that
 frontier one ready ticket at a time.
 
+Use `prototype` before committing to a design when a small interactive logic demo or UI
+variation can answer an open question. Record the validated decision and a pointer to the
+throwaway prototype on its ticket; keep prototype-only code out of the production branch.
+
 The disciplines are optional but recommended: `grilling` before committing to a design,
-`tdd` inside each ticket, `domain-modeling` when terminology settles, `code-review`
-before the PR, and `writing-for-agents` when you adapt any of these skills to your repo.
+`codebase-design` when the shape of an interface or seam is in question, `tdd` inside each
+ticket, `diagnosing-bugs` for hard failures and regressions, `domain-modeling` when
+terminology settles, `code-review` before the PR, and `writing-for-agents` when you adapt
+any of these skills to your repo.
 
 ### What is intentionally not bundled
 
@@ -126,6 +146,19 @@ before the PR, and `writing-for-agents` when you adapt any of these skills to yo
 - **Issue-tracker sync**: the index reads local files only. If your source of truth is a
   remote tracker, export tickets to `.tickets/<id>.md` first; the script stays out of
   network calls by design.
+
+## Generated-index conflicts
+
+Ticket files and `ticket-index.toml` are the source of truth; `docs/tickets/**` is
+regenerated output. Before opening a PR, rebase on the latest target branch. If the rebase
+conflicts, resolve `.tickets/*.md` and `ticket-index.toml` first; never hand-merge the
+generated index. Then run `render` and `check`, stage the merged sources and regenerated
+files, and continue the rebase. After the rebase finishes, run `render` and `check` again.
+
+```bash
+python .cursor/skills/ticket-index/scripts/ticket_index.py render
+python .cursor/skills/ticket-index/scripts/ticket_index.py check
+```
 
 ## Command reference
 
@@ -157,6 +190,7 @@ tests/                   stdlib unittest suite for the index script and hook
 
 ## Documentation
 
+- [Dependencies](docs/DEPENDENCIES.md): supported Python version, dependency inventory, and verification commands.
 - [Concepts](docs/concepts.md): why the index is derived, module ownership, determinism,
   maps.
 - [Ticket contract](docs/ticket-contract.md): frontmatter fields, status semantics,
@@ -189,7 +223,9 @@ file is left stale.
 
 MIT. See [LICENSE](LICENSE).
 
-Several bundled skills are adapted from Matt Pocock's MIT-licensed
-[skills](https://github.com/mattpocock/skills); the `pr` skill credits HumanLayer's
-`show-me` skill. See [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) for the exact
-provenance, and [CONTRIBUTING.md](CONTRIBUTING.md) for how to propose changes.
+The bundled `codebase-design`, `diagnosing-bugs`, and `prototype` skills are adapted from
+Matt Pocock's MIT-licensed [skills](https://github.com/mattpocock/skills), pinned to
+commit `5beb35b040e3de97e54fa9e386d7e42d15c295c2`. The `pr` skill also credits Dex
+Horthy's `show-me` skill from HumanLayer. See [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)
+for source paths and license notices, and [CONTRIBUTING.md](CONTRIBUTING.md) for how to
+propose changes.
