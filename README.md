@@ -183,9 +183,10 @@ skills/
   setup-ticket-workflow/ repo scaffolding, with the local tracker contract
   ...                    other companion skills
 examples/demo/           a runnable six-ticket project and its generated index
-docs/                    concepts, ticket contract, configuration, workflow
+.tickets/                this repository's own tickets
+docs/                    concepts and reference, plus the index generated from .tickets/
 scripts/                 install.py and verify.py
-tests/                   stdlib unittest suite for the index script and hook
+tests/                   stdlib unittest suite for the index script, hook, and installer
 ```
 
 ## Documentation
@@ -207,7 +208,8 @@ python -m unittest discover -s tests -v
 ```
 
 `verify.py` also asserts that rendering the demo twice is a no-op and that no generated
-file is left stale.
+file is left stale. The unit suite runs `check` against this repository's own index as
+well, so editing a ticket or `ticket-index.toml` without re-rendering fails CI.
 
 ## Adapting the kit
 

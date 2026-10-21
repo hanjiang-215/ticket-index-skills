@@ -1,0 +1,31 @@
+# Ticket index for this repository's own ticket store.
+# Ticket frontmatter is the source of truth; everything below the modules and the
+# per-ticket judgement (module, summary) is derived by `render`.
+
+[settings]
+title = "Ticket Index Skills"
+tickets_dir = ".tickets"
+output_dir = "docs/tickets"
+
+[[modules]]
+id = "index"
+title = "Index generation"
+scope = "Rendering, validation, determinism, and scale of the generated index"
+
+[[modules]]
+id = "installer"
+title = "Installation"
+scope = "scripts/install.py, skill copying, and the Cursor auto-sync hook"
+
+[[modules]]
+id = "docs"
+title = "Documentation"
+scope = "README, concepts, ticket contract, configuration, and dependency records"
+
+[tickets]
+"tis-xkcd" = { module = "index", summary = "Umbrella for recursion safety and grouped module rendering" }
+"tis-ito8" = { module = "index", summary = "1500-deep parent chains render without RecursionError" }
+"tis-xk94" = { module = "index", summary = "One grouped view per module replaces repeated full-store scans" }
+"tis-9s2p" = { module = "index", summary = "Parallel renders serialize on a lock and leave a check-clean index" }
+"tis-edku" = { module = "installer", summary = "Failed copies and malformed hook JSON restore the previous tree" }
+"tis-zkzz" = { module = "docs", summary = "Python 3.11+, stdlib only, with the exact verification commands" }

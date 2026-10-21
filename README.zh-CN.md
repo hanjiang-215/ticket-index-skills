@@ -140,9 +140,10 @@ skills/
   setup-ticket-workflow/ 仓库脚手架和本地票据跟踪约定
   ...                    其他配套技能
 examples/demo/           可运行的六张票据示例及其生成索引
-docs/                    概念、票据约定、配置和工作流文档
+.tickets/                本仓库自己的票据
+docs/                    概念与参考文档，以及由 .tickets/ 生成的索引
 scripts/                 install.py 和 verify.py
-tests/                   使用 unittest 标准库的索引脚本和钩子测试
+tests/                   使用 unittest 标准库的索引脚本、钩子和安装器测试
 ```
 
 ## 文档
@@ -160,7 +161,7 @@ python scripts/verify.py      # 单元测试 + 示例检查/生成/检查/差异
 python -m unittest discover -s tests -v
 ```
 
-`verify.py` 还会确保对示例连续渲染两次时第二次不产生变化，并确认没有过期的生成文件。
+`verify.py` 还会确保对示例连续渲染两次时第二次不产生变化，并确认没有过期的生成文件。单元测试同时会对本仓库自己的索引执行 `check`，因此修改票据或 `ticket-index.toml` 后忘记渲染会导致 CI 失败。
 
 ## 定制
 
