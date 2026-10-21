@@ -72,6 +72,16 @@ class HookTest(unittest.TestCase):
                     expected,
                 )
 
+    def test_config_edit_triggers_with_an_unresolved_config_path(self) -> None:
+        # Cursor may hand over either form of the path, and temp directories are
+        # symlinked on some platforms, so both sides must be compared resolved.
+        indirect = self.root / "docs" / ".." / "ticket-index.toml"
+        self.assertTrue(
+            hook.touches_tickets(
+                "after-file-edit", {"file_path": str(self.config)}, indirect
+            )
+        )
+
     def test_load_paths_for_primary_layout(self) -> None:
         root, tickets, output = hook.load_paths(self.config)
         self.assertEqual(root, self.root)

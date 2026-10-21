@@ -83,7 +83,11 @@ def touches_tickets(event: str, payload: dict, config_path: Path) -> bool:
             edited = Path(str(payload.get("file_path", ""))).resolve()
         except OSError:
             return False
-        if edited == config_path:
+        try:
+            config_resolved = config_path.resolve()
+        except OSError:
+            config_resolved = config_path
+        if edited == config_resolved:
             return True
         try:
             return edited.is_relative_to(tickets_dir) and edited.suffix == ".md"
