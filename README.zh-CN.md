@@ -1,10 +1,10 @@
-# Ticket Index Skills
+# Ticket Index Workflow
 
 [English](README.md) | 简体中文
 
 **作者 / Author：** hanjiang-215
 
-Ticket Index Skills 是一套面向大型代码仓库中 AI 编程代理的票据驱动工作流。
+Ticket Index Workflow（票据索引工作流）是一套面向大型代码仓库中 AI 编程代理的票据驱动工作流。
 
 核心技能 **ticket-index** 会从 Markdown 票据生成确定性的三级索引，让代理无需逐一打开所有票据，就能了解当前有哪些工作、由谁负责，以及哪些工作现在可以开始。配套技能覆盖工作定义、拆分、排序、实现和评审。
 

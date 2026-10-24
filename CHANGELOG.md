@@ -26,6 +26,11 @@ All notable changes to this project are documented here. The format follows
 - Documented scale: independent benchmark shows `render` and `check` complete in about
   one second on a 2,000-ticket, 10-module store.
 
+### Changed
+
+- Renamed the project from "Ticket Index Skills" to **Ticket Index Workflow**
+  (票据索引工作流). The core skill keeps the name `ticket-index`.
+
 ## [0.2.0] - 2026-10-21
 
 ### Added

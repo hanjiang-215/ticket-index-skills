@@ -3,7 +3,7 @@
 # per-ticket judgement (module, summary) is derived by `render`.
 
 [settings]
-title = "Ticket Index Skills"
+title = "Ticket Index Workflow"
 tickets_dir = ".tickets"
 output_dir = "docs/tickets"
 

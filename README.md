@@ -1,4 +1,4 @@
-# Ticket Index Skills
+# Ticket Index Workflow
 
 English | [简体中文](README.zh-CN.md)
 
@@ -13,7 +13,7 @@ split, sequence, implement, and review that work.
 
 ## 中文简介
 
-Ticket Index Skills 为大型代码仓库中的 AI 编程代理提供基于 Markdown 任务票据的工作流。核心技能 `ticket-index` 会从票据生成确定性的三级索引，帮助代理快速找到现有工作、负责人和当前可开始的任务，而无需逐一打开所有票据。
+Ticket Index Workflow（票据索引工作流）为大型代码仓库中的 AI 编程代理提供基于 Markdown 任务票据的工作流。核心技能 `ticket-index` 会从票据生成确定性的三级索引，帮助代理快速找到现有工作、负责人和当前可开始的任务，而无需逐一打开所有票据。
 
 项目仅依赖 Python 3.11+ 标准库，并提供安装脚本、可选的 Cursor 自动同步钩子和完整示例。完整中文说明见 [README.zh-CN.md](README.zh-CN.md)。
 
