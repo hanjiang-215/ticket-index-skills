@@ -53,8 +53,8 @@ Because the output is deterministic, `diff` shows exactly what a render would ch
 Requirements: Python 3.11 or newer (for `tomllib`). No packages to install.
 
 ```bash
-git clone <repo-url> ticket-index-skills
-cd ticket-index-skills
+git clone <repo-url> ticket-index-workflow
+cd ticket-index-workflow
 
 # Copy the skills into your repository and install the Cursor auto-sync hook
 python scripts/install.py --target /path/to/your/repo --install-hooks

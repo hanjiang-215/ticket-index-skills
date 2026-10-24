@@ -35,8 +35,8 @@ docs/tickets/modules/<id>.md   模块页：按父子层级排列的票据
 要求：Python 3.11 或更高版本（使用内置的 `tomllib`）。无需安装第三方包。
 
 ```bash
-git clone <repo-url> ticket-index-skills
-cd ticket-index-skills
+git clone <repo-url> ticket-index-workflow
+cd ticket-index-workflow
 
 # 将技能安装到你的仓库，并安装 Cursor 自动同步钩子
 python scripts/install.py --target /path/to/your/repo --install-hooks
