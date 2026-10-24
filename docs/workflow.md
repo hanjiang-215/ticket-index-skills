@@ -68,8 +68,9 @@ python .cursor/skills/ticket-index/scripts/ticket_index.py render
 python .cursor/skills/ticket-index/scripts/ticket_index.py check
 ```
 
-For a new ticket, add its `[tickets]` entry to `ticket-index.toml` first. `check` names
-every missing entry, unknown module, and broken reference.
+For a new ticket, mint its id with `new-id` and add the `[tickets]` entry to
+`ticket-index.toml` first. `check` names every missing entry, unknown module, and
+broken reference.
 
 The generated overview answers the questions an agent asks at the start of a session:
 
@@ -122,6 +123,24 @@ sessions or a context window is about to be exhausted.
 `/writing-for-agents` is for maintaining the kit itself: writing a new skill, tightening
 a description, or adding pointer docs to `AGENTS.md`.
 
+## Optional: CI integration
+
+Run `verify.py` on push and pull requests — it covers the unit suite, the demo
+cycle, and the installer. On the integration branch, keep the merged index fresh by
+re-rendering after every merge and committing the result:
+
+```bash
+python .cursor/skills/ticket-index/scripts/ticket_index.py render
+python .cursor/skills/ticket-index/scripts/ticket_index.py check
+git add docs/tickets
+git commit -m "chore: re-render ticket index after merge"
+```
+
+Gitee, GitHub, and GitLab all let a merge-request pipeline run this and push the
+resulting commit back to the target branch. Together with the installer's
+`--install-git-hooks`, this closes the loop for parallel work: source conflicts stay
+human, generated files stay machine-managed.
+
 ## Artifacts
 
 | Artifact | Owner | Mutability |
@@ -142,6 +161,15 @@ a description, or adding pointer docs to `AGENTS.md`.
 - Re-read a ticket before editing it. If someone else changed it, append a dated note
   instead of overwriting.
 - Keep `render` and its resulting generated files in the same commit.
+- Generated files never block a parallel merge: `install.py` configures
+  `docs/tickets/**` with the `ours` merge driver, so git keeps the branch-local index
+  during a merge or rebase. The integrator resolves the source conflicts
+  (`.tickets/*.md`, `ticket-index.toml`), then runs `render` and `check` once so the
+  merged index reflects both branches.
+- `install.py --install-git-hooks` writes `post-merge` and `post-checkout` git hooks
+  that re-render the index after every merge and branch switch, so the frontier updates
+  as soon as other developers' work lands locally (installer-provided hooks never
+  overwrite an existing user hook).
 - When two sessions close tickets at once, the second `render` is a no-op on files that
   already match; if it conflicts, re-run `check` and resolve at the ticket level.
 

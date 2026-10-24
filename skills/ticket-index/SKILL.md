@@ -140,9 +140,16 @@ python .cursor/skills/ticket-index/scripts/ticket_index.py facts
 
 Edit `ticket-index.toml`:
 
-- new ticket: add one line under `[tickets]`;
+- new ticket: mint an id with `new-id`, then add one line under `[tickets]`;
 - moved ticket: change its `module` array;
 - removed ticket: delete its line and any now-empty module.
+
+`new-id` prints one ticket id that does not collide with the existing store, so
+two sessions creating tickets in parallel cannot silently pick the same filename:
+
+```bash
+python .cursor/skills/ticket-index/scripts/ticket_index.py new-id
+```
 
 ### 3. Review only the delta
 
@@ -171,6 +178,16 @@ python .cursor/skills/ticket-index/scripts/ticket_index.py check
 
 Commit `ticket-index.toml` together with every generated file. Exit code `0`
 and `OK: ...` means the index is consistent.
+
+Generated files need special merge handling, because every ticket edit rewrites the
+overview and the module pages. `install.py` adds `docs/tickets/** merge=ours` to the
+repository's `.gitattributes` and registers the `ours` merge driver in git config.
+During a merge or rebase, git then keeps the branch-local index and only source
+conflicts (`.tickets/*.md`, `ticket-index.toml`) surface; never hand-merge
+`docs/tickets/**` or choose one side's generated output. On a plain clone, register
+the driver once with `git config merge.ours.driver true` (or re-run the installer).
+The integrator resolves the source conflicts, runs `render` and `check` once so the
+merged index carries both sides' tickets, and commits them together.
 
 Before opening a PR, update the branch from its target branch and re-render the index.
 If a rebase stops with conflicts, resolve `.tickets/*.md` and `ticket-index.toml` first;
@@ -204,8 +221,15 @@ Never copy one ticket into several modules to make a page look complete.
 
 ## Optional: auto-sync hook
 
-`hooks/ticket-index-sync.py` re-renders after a ticket mutation, so generated
-files cannot go stale even when someone forgets to run `render`.
+`hooks/ticket-index-sync.py` re-renders after a ticket mutation (Cursor
+`afterShellExecution` / `afterFileEdit`), so generated files cannot go stale even
+when someone forgets to run `render`.
+
+`install.py --install-git-hooks` takes the same job to the git layer: it writes
+`post-merge` and `post-checkout` hooks that re-render the index after every merge
+and branch switch, so other people's ticket changes appear as soon as their work
+lands. The hooks never overwrite an existing user hook and never block the git
+operation.
 
 Merge `hooks/hooks.json.example` into `<repo>/.cursor/hooks.json` and adjust the
 path if the skill is installed elsewhere:

@@ -42,12 +42,12 @@ cd ticket-index-skills
 python scripts/install.py --target /path/to/your/repo --install-hooks
 ```
 
-`--install-hooks` 仅适用于 Cursor。Claude Code 使用 `--agent claude`；其他代理可通过 `--skills-dir` 指定其读取技能的目录。不需要钩子时，省略 `--install-hooks`。
+`--install-hooks` 仅适用于 Cursor。Claude Code 使用 `--agent claude`；其他代理可通过 `--skills-dir` 指定其读取技能的目录。不需要钩子时，省略 `--install-hooks`。加上 `--install-git-hooks` 可以让索引在每次合并和切换分支后自动保持最新（详见下文"生成索引的冲突处理"）。
 
 然后在目标仓库中：
 
 1. 运行 `/setup-ticket-workflow`。确认票据 ID 前缀和模块列表后，该技能会写入 `ticket-index.toml`、`.tickets/README.md`、`docs/agents/issue-tracker.md` 和 `docs/agents/domain.md`。
-2. 按 frontmatter 约定在 `.tickets/<id>.md` 下添加票据。
+2. 用 `new-id` 生成票据 ID（见命令参考），然后按 frontmatter 约定在 `.tickets/<id>.md` 下添加票据。
 3. 在 `ticket-index.toml` 中为每张票据添加一条 `[tickets]` 配置。
 4. 生成并检查索引：
 
@@ -112,12 +112,20 @@ wayfinder ─┘        (规范)     (票据)       (导航)          (执行)  
 
 ## 生成索引的冲突处理
 
-票据文件和 `ticket-index.toml` 是事实来源，`docs/tickets/**` 是生成输出。创建 PR 前，先将分支变基到目标分支的最新版本。若变基发生冲突，先解决 `.tickets/*.md` 和 `ticket-index.toml` 中的源文件冲突；不要手工合并 `docs/tickets/**`，也不要直接选择某一侧的生成结果。然后运行 `render` 和 `check`，将合并后的源文件及重新生成的索引一并暂存，再继续变基。变基完成后，再运行一次 `render` 和 `check`。
+票据文件和 `ticket-index.toml` 是事实来源；`docs/tickets/**` 是生成输出，任何票据变更都会改写它，因此并行分支在文本层面必然在这里相撞。安装器会把生成文件从冲突面上移除：
+
+1. `install.py` 会在 `.gitattributes` 中添加 `docs/tickets/** merge=ours`，并在本地 git 配置中注册 `ours` 合并驱动。在全新克隆的仓库里，可以执行 `git config merge.ours.driver true` 一次性注册（或重跑安装器）。
+2. 合并或变基时，git 会保留**目标分支本地**的索引；只有真正的源文件冲突会出现：`.tickets/*.md` 和 `ticket-index.toml`。不要手工合并 `docs/tickets/**`，也不要直接选择某一侧的生成结果。
+3. 合并者先解决源文件冲突，再运行一次 `render` 和 `check`，让合并后的索引反映双方票据，最后把源文件和重新生成的索引一起提交：
 
 ```bash
 python .cursor/skills/ticket-index/scripts/ticket_index.py render
 python .cursor/skills/ticket-index/scripts/ticket_index.py check
 ```
+
+如果没有配置合并驱动（例如既有克隆），回退到手工流程：先解决 `.tickets/*.md` 和 `ticket-index.toml` 中的源文件冲突，运行 `render` 和 `check` 从合并后的源文件重新生成索引，再继续变基。
+
+可选的 `--install-git-hooks` 参数把这个闭环延伸到 git 层面：它会写入 `post-merge` 和 `post-checkout` 钩子，在每次合并和切换分支后自动重新 `render`，这样别人合并进来的票据会立刻反映到你本地的索引里。安装器写入的钩子不会覆盖已有钩子，也绝不会阻塞 git 操作。
 
 ## 命令参考
 
@@ -129,6 +137,7 @@ python .cursor/skills/ticket-index/scripts/ticket_index.py check
 | `diff` | 打印将要发生的统一差异，不写入文件 |
 | `render` | 写入 `INDEX.md` 和 `modules/*.md`，并移除过期模块文件 |
 | `facts` | 打印供人工决策使用的紧凑制表符分隔事实表 |
+| `new-id` | 生成一个未使用的票据 id，作为并行创建票据的防撞护栏 |
 
 对任意命令传入 `--config PATH`，可指定配置文件，而不使用向上查找。
 

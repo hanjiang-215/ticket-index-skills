@@ -55,8 +55,9 @@ Choose a shape that cannot appear by accident in prose:
   summaries or URLs.
 
 The prefix may be uppercase; the four-character suffix is conventionally lowercase
-letters and digits. The script does not generate ids, so any scheme the pattern accepts
-is valid.
+letters and digits. `new-id` prints one id that matches the pattern and does not
+collide with the existing store; it never writes files, so any scheme the pattern
+accepts is valid.
 
 ## Modules
 

@@ -59,7 +59,7 @@ Iterate until the user approves the breakdown.
 
 Publish the approved tickets. **How** depends on the tracker `/setup-ticket-workflow` configured; the tickets are the same either way, only the shape of the blocking edges changes:
 
-- **Local files** → follow the "Publishing tickets" section of `docs/agents/issue-tracker.md`: in this kit that means one `.tickets/<id>.md` per ticket with frontmatter `deps`, plus one `ticket-index.toml` entry. Numbering is replaced by short ids. Write blockers in a second pass, after every id exists.
+- **Local files** → follow the "Publishing tickets" section of `docs/agents/issue-tracker.md`: in this kit that means one `.tickets/<id>.md` per ticket with frontmatter `deps`, plus one `ticket-index.toml` entry. Numbering is replaced by short ids. Mint each id with `ticket_index.py new-id` so the batch never collides with an existing ticket; when several developers share the repository, give each developer a distinct `<PREFIX>` (`ai4-alice-*`, `ai4-bob-*`) so cross-branch collisions are also impossible. Write blockers in a second pass, after every id exists.
 - **A real issue tracker (GitHub, Linear, …)** → publish one issue per ticket in dependency order (blockers first) so each ticket's blocking edges can reference real identifiers. Use the platform's native blocking relationship where it has one; otherwise set each ticket's "Blocked by" to the blocking issues. If the source was an existing issue, make each ticket its sub-issue (tracker doc's operation). Apply the `ready-for-agent` triage label unless instructed otherwise; the tickets are agent-grabbable by construction.
 
 Work the **frontier**: any ticket whose blockers are all done. For a purely linear chain that means top to bottom.

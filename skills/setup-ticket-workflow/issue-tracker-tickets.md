@@ -49,7 +49,7 @@ index (see the last section).
 
 | Operation | How |
 | --- | --- |
-| Create | Write `<TICKETS_DIR>/<new-id>.md` with the frontmatter above, `status: open`, and `created` set to now. Add its `[tickets]` entry to `ticket-index.toml`. |
+| Create | Mint an unused id with `python <skill>/scripts/ticket_index.py new-id` (or choose one by the id pattern), write `<TICKETS_DIR>/<new-id>.md` with the frontmatter above, `status: open`, and `created` set to now. Add its `[tickets]` entry to `ticket-index.toml`. |
 | Read | Open the file. Resolve references through the index, not by guessing ids. |
 | Change status | Edit `status` to `open`, `in_progress`, or `closed`. |
 | Claim | Set `assignee` to the driver and `status: in_progress`, as one edit, before any work. |

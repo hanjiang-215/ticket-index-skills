@@ -62,13 +62,16 @@ python scripts/install.py --target /path/to/your/repo --install-hooks
 
 `--install-hooks` is Cursor-only. For Claude Code, use `--agent claude`; for any other
 agent, point `--skills-dir` at the directory it reads. Omit the hook flag to skip it.
+Add `--install-git-hooks` to keep the index fresh after every merge and branch switch
+(see "Generated-index conflicts" below).
 
 Then, in the target repository:
 
 1. Run `/setup-ticket-workflow`. It writes `ticket-index.toml`, `.tickets/README.md`,
    `docs/agents/issue-tracker.md`, and `docs/agents/domain.md`, after confirming the
    ticket id prefix and module list with you.
-2. Add tickets under `.tickets/<id>.md` with the frontmatter contract.
+2. Mint an id with `new-id` (see the command reference), then add tickets under
+   `.tickets/<id>.md` with the frontmatter contract.
 3. Add one `[tickets]` entry per ticket to `ticket-index.toml`.
 4. Render and verify:
 
@@ -150,15 +153,34 @@ any of these skills to your repo.
 ## Generated-index conflicts
 
 Ticket files and `ticket-index.toml` are the source of truth; `docs/tickets/**` is
-regenerated output. Before opening a PR, rebase on the latest target branch. If the rebase
-conflicts, resolve `.tickets/*.md` and `ticket-index.toml` first; never hand-merge the
-generated index. Then run `render` and `check`, stage the merged sources and regenerated
-files, and continue the rebase. After the rebase finishes, run `render` and `check` again.
+regenerated output that changes with every ticket edit, so parallel branches collide on
+it at the text level. The installer removes generated files from the conflict surface:
+
+1. `install.py` adds `docs/tickets/** merge=ours` to `.gitattributes` and registers the
+   `ours` merge driver in the local git config. On a plain clone, register the driver
+   once with `git config merge.ours.driver true` (or re-run the installer).
+2. During a merge or rebase, git keeps the **branch-local** index; only real source
+   conflicts surface: `.tickets/*.md` and `ticket-index.toml`. The rule stays the
+   same as in the manual loop below: never hand-merge the generated index, and never
+   pick one side's generated output.
+3. The integrator resolves the source conflicts, then runs `render` and `check` once so
+   the merged index reflects both sides, and commits sources and regenerated files
+   together:
 
 ```bash
 python .cursor/skills/ticket-index/scripts/ticket_index.py render
 python .cursor/skills/ticket-index/scripts/ticket_index.py check
 ```
+
+Without the driver configured (for example on an existing clone), fall back to the
+manual loop: resolve `.tickets/*.md` and `ticket-index.toml` first, run `render` and
+`check` to regenerate the merged index, then continue the rebase.
+
+The optional `--install-git-hooks` flag closes the same loop at the git layer: it
+writes `post-merge` and `post-checkout` hooks that re-run `render` after every merge
+and branch switch, so the index on your machine catches up as soon as other people's
+tickets merge in. Installer hooks never overwrite an existing hook and never block the
+git operation.
 
 ## Command reference
 
@@ -171,6 +193,7 @@ also accepts the legacy `docs/tickets/index.toml`.
 | `diff` | Print unified diffs for files that would change. Writes nothing |
 | `render` | Write `INDEX.md` and `modules/*.md`, remove obsolete module files |
 | `facts` | Print a compact tab-separated fact sheet for a human decision |
+| `new-id` | Print one unused ticket id, the coordination guard for parallel ticket creation |
 
 Pass `--config PATH` to any command to use a specific config file instead of searching
 upward.

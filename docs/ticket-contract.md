@@ -14,7 +14,9 @@ writes the operations down for agents.
   pattern is skipped with a warning.
 
 Ids are stable identifiers. Choose them once; renaming an id means updating every
-reference in `parent`, `deps`, and `links`, plus the configuration entry.
+reference in `parent`, `deps`, and `links`, plus the configuration entry. Ask the
+script for an id instead of inventing one: `ticket_index.py new-id` prints an id
+that matches the pattern and is not already used in the ticket store.
 
 ## Frontmatter fields
 
