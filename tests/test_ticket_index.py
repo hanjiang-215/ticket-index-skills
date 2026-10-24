@@ -5,6 +5,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "skills" / "ticket-index" / "scripts" / "ticket_index.py"
@@ -216,6 +217,58 @@ class TicketIndexTest(unittest.TestCase):
         index = self.repo.load()
         self.assertTrue(any("unknown status `doing`" in item for item in index.warnings))
         self.assertFalse(index.tickets["demo-a1b2"].active)
+
+    def test_new_id_prints_an_unused_id(self) -> None:
+        self.repo.ticket("demo-a1b2")
+        self.repo.write_config({"demo-a1b2": self.entry()})
+        code, out, err = self.repo.run(lambda: ti.cmd_new_id(self.repo.load(), None))
+        self.assertEqual(code, 0, err)
+        candidate = out.strip()
+        self.assertRegex(candidate, r"^demo-[0-9a-z]{4}$")
+        self.assertNotEqual(candidate, "demo-a1b2")
+        self.assertFalse((self.repo.tickets / f"{candidate}.md").exists())
+
+    def test_new_id_accepts_an_explicit_prefix(self) -> None:
+        # Default pattern has no literal prefix, so --prefix is the only way to mint.
+        settings = '[settings]\ntickets_dir = ".tickets"\nid_pattern = "[A-Za-z][A-Za-z0-9]*-[0-9a-z]{4}"\n'
+        self.repo.write_config({}, settings=settings)
+        code, out, err = self.repo.run(lambda: ti.cmd_new_id(self.repo.load(), "app"))
+        self.assertEqual(code, 0, err)
+        self.assertRegex(out.strip(), r"^app-[0-9a-z]{4}$")
+
+    def test_new_id_retries_on_collision_with_existing_ids(self) -> None:
+        # First four-char draw collides with an existing id; the second is accepted.
+        with mock.patch.object(
+            ti.random,
+            "choice",
+            side_effect=["a", "1", "b", "2", "c", "3", "d", "4"],
+        ):
+            self.repo.ticket("demo-a1b2")
+            self.repo.write_config({"demo-a1b2": self.entry()})
+            code, out, err = self.repo.run(lambda: ti.cmd_new_id(self.repo.load(), "demo"))
+        self.assertEqual(code, 0, err)
+        self.assertEqual(out.strip(), "demo-c3d4")
+
+    def test_new_id_refuses_when_prefix_cannot_be_inferred(self) -> None:
+        settings = '[settings]\ntickets_dir = ".tickets"\nid_pattern = "[A-Za-z][A-Za-z0-9]*-[0-9a-z]{4}"\n'
+        self.repo.write_config({}, settings=settings)
+        code, out, err = self.repo.run(lambda: ti.cmd_new_id(self.repo.load(), None))
+        self.assertEqual(code, 2)
+        self.assertIn("--prefix", err)
+
+    def test_new_id_mints_ids_that_match_the_configured_pattern(self) -> None:
+        settings = '[settings]\ntickets_dir = ".tickets"\nid_pattern = "AI4-[0-9a-z]{4}"\n'
+        self.repo.write_config({}, settings=settings)
+        code, out, err = self.repo.run(lambda: ti.cmd_new_id(self.repo.load(), "AI4"))
+        self.assertEqual(code, 0, err)
+        self.assertRegex(out.strip(), r"^AI4-[0-9a-z]{4}$")
+
+    def test_new_id_rejects_a_prefix_incompatible_with_the_pattern(self) -> None:
+        self.repo.ticket("demo-a1b2")
+        self.repo.write_config({"demo-a1b2": self.entry()})
+        code, out, err = self.repo.run(lambda: ti.cmd_new_id(self.repo.load(), "app"))
+        self.assertEqual(code, 1)
+        self.assertIn("does not produce ids", err)
 
     def test_module_validation(self) -> None:
         self.repo.write_config(

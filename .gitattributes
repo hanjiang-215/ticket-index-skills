@@ -2,3 +2,9 @@
 
 *.bat text eol=crlf
 *.ps1 text eol=crlf
+
+# Generated ticket index files must never be hand-merged. The ours driver keeps
+# the branch-local index during a merge or rebase; the integrator re-runs
+# `render` and `check` once so the merged index reflects both sides.
+docs/tickets/** merge=ours
+examples/demo/docs/tickets/** merge=ours

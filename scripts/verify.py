@@ -93,8 +93,12 @@ def verify_installer() -> int:
         target = Path(temp) / "repo"
         target.mkdir()
 
+        result = run(["git", "init", "-q"], target)
+        if check_exit("git init in the install target", result, 0):
+            return 1
+
         result = run(
-            [sys.executable, str(INSTALL_SCRIPT), "--target", str(target), "--skills", "ticket-index", "--install-hooks"],
+            [sys.executable, str(INSTALL_SCRIPT), "--target", str(target), "--skills", "ticket-index", "--install-hooks", "--install-git-hooks"],
             KIT_ROOT,
         )
         if check_exit("install skills and hooks", result, 0):
@@ -108,6 +112,23 @@ def verify_installer() -> int:
         hooks_text = hooks_path.read_text(encoding="utf-8") if hooks_path.is_file() else ""
         if "ticket-index-sync.py after-file-edit" not in hooks_text:
             return fail("hooks.json does not reference the sync hook", result)
+
+        attributes = target / ".gitattributes"
+        attributes_text = attributes.read_text(encoding="utf-8") if attributes.is_file() else ""
+        if "docs/tickets/** merge=ours" not in attributes_text:
+            return fail("installer wrote the merge=ours rule", result)
+        config_path = target / ".git" / "config"
+        config_text = config_path.read_text(encoding="utf-8") if config_path.is_file() else ""
+        if '[merge "ours"]' not in config_text:
+            return fail("installer registered the ours merge driver", result)
+
+        for hook_name in ("post-merge", "post-checkout"):
+            hook_path = target / ".git" / "hooks" / hook_name
+            if not hook_path.is_file():
+                return fail(f"installer wrote the {hook_name} hook", result)
+            hook_text = hook_path.read_text(encoding="utf-8")
+            if "ticket_index.py" not in hook_text:
+                return fail(f"{hook_name} hook references the index script", result)
 
         result = run(
             [sys.executable, str(INSTALL_SCRIPT), "--target", str(target), "--skills", "ticket-index"],

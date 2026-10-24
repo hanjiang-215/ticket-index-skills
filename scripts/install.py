@@ -3,7 +3,10 @@
 
 Copies the skill folders to the directory your agent reads (``.cursor/skills`` for
 Cursor, ``.claude/skills`` for Claude Code, or any path via ``--skills-dir``). Optionally
-merges the ticket-index auto-sync hook into ``.cursor/hooks.json``.
+merges the ticket-index auto-sync hook into ``.cursor/hooks.json``. Also configures the
+generated ticket index to merge without conflict (``.gitattributes`` plus the ``ours``
+merge driver), and, with ``--install-git-hooks``, writes ``post-merge`` and
+``post-checkout`` git hooks that re-render the index after every merge and branch switch.
 
 Standard library only.
 """
@@ -17,6 +20,11 @@ import shutil
 import sys
 import tempfile
 from pathlib import Path
+
+try:
+    import tomllib
+except ModuleNotFoundError:  # pragma: no cover
+    tomllib = None
 
 KIT_ROOT = Path(__file__).resolve().parents[1]
 SKILLS_ROOT = KIT_ROOT / "skills"
@@ -160,6 +168,186 @@ def install_hooks(target: Path, dest_skills: Path) -> Path:
     return hooks_path
 
 
+def read_output_dir(target: Path) -> str | None:
+    """Return the generated-index output dir relative to ``target``, if configured.
+
+    Reads ``settings.output_dir`` from ``<target>/ticket-index.toml``. Absent
+    config, parse errors, and absolute output dirs yield ``None`` so callers
+    fall back to the kit default ``docs/tickets``.
+    """
+    config = target / "ticket-index.toml"
+    if tomllib is None or not config.is_file():
+        return None
+    try:
+        raw = tomllib.loads(config.read_text(encoding="utf-8-sig"))
+    except (OSError, tomllib.TOMLDecodeError):
+        return None
+    settings = raw.get("settings") if isinstance(raw, dict) else None
+    if not isinstance(settings, dict):
+        return None
+    output = settings.get("output_dir")
+    if not isinstance(output, str) or Path(output).is_absolute():
+        return None
+    return output.strip().replace("\\", "/").strip("/")
+
+
+def git_config_path(target: Path) -> Path | None:
+    """Path to the git config backing ``target``'s repository, if any.
+
+    Handles regular clones (``.git/`` directory), worktrees, and submodules
+    (``.git`` file with a ``gitdir:`` pointer). Returns ``None`` when the
+    target is not a git repository, so merge-driver setup is skipped quietly.
+    """
+    dot_git = target / ".git"
+    if dot_git.is_dir():
+        return dot_git / "config"
+    if dot_git.is_file():
+        for line in dot_git.read_text(encoding="utf-8").splitlines():
+            stripped = line.strip()
+            if stripped.startswith("gitdir:"):
+                gitdir = Path(stripped.partition(":")[2].strip())
+                if not gitdir.is_absolute():
+                    gitdir = target / gitdir
+                return gitdir / "config"
+    return None
+
+
+def install_git_merge(target: Path) -> str:
+    """Make generated index files merge without conflicts.
+
+    Two steps: (1) add ``<output>/** merge=ours`` to ``<target>/.gitattributes``,
+    and (2) when the target is a git repository, register the matching ``ours``
+    merge driver in its git config. git then keeps the branch-local index during
+    a merge or rebase; the integrator runs ``render`` once afterwards so the
+    merged index carries both sides. ``render`` remains the source of truth for
+    the files; this only removes them from the conflict surface.
+
+    Best-effort: a write failure returns a warning instead of aborting the
+    install. Returns a human-readable status line.
+    """
+    output = read_output_dir(target) or "docs/tickets"
+    rule = f"{output}/** merge=ours"
+
+    attrs_path = target / ".gitattributes"
+    try:
+        existing = attrs_path.read_text(encoding="utf-8") if attrs_path.is_file() else ""
+        if rule not in existing.splitlines():
+            prefix = "" if not existing or existing.endswith("\n") else "\n"
+            with attrs_path.open("a", encoding="utf-8", newline="\n") as stream:
+                stream.write(prefix + rule + "\n")
+    except OSError as exc:
+        return f"warning: could not write {attrs_path}: {exc}"
+
+    config_path = git_config_path(target)
+    if config_path is None:
+        return (
+            f"configured {rule} in .gitattributes ({target.name} is not a git "
+            "repository; merge driver not registered)"
+        )
+
+    driver_header = '[merge "ours"]'
+    try:
+        existing = config_path.read_text(encoding="utf-8") if config_path.is_file() else ""
+        if driver_header not in existing:
+            prefix = "" if not existing or existing.endswith("\n") else "\n"
+            with config_path.open("a", encoding="utf-8", newline="\n") as stream:
+                stream.write(f"{prefix}{driver_header}\n\tdriver = true\n")
+    except OSError as exc:
+        return f"warning: could not write {config_path}: {exc}"
+
+    return (
+        f"configured {rule} with the `ours` merge driver: merge or rebase keeps "
+        "the branch-local index, then run `render` once on the integration branch"
+    )
+
+
+# A POSIX shell hook: git runs hooks with sh even on Windows, and the working
+# directory is the top of the worktree. It must never block the git operation,
+# so failures are swallowed and the exit code is always 0.
+GIT_HOOK_TEMPLATE = """#!/bin/sh
+# Managed by the ticket-index installer. Keeps the generated index current after
+# merges and branch switches. Render is idempotent and fast; failures never block git.
+root="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
+script="$root/{skills_rel}/ticket-index/scripts/ticket_index.py"
+[ -f "$script" ] || exit 0
+# post-checkout receives <old> <new> <flag>; a flag other than 1 means a
+# single-file checkout, which must not trigger a render. post-merge takes no args.
+if [ "$#" -eq 3 ] && [ "$3" != "1" ]; then
+  exit 0
+fi
+python3 "$script" render >/dev/null 2>&1 || python "$script" render >/dev/null 2>&1 || true
+exit 0
+"""
+GIT_HOOK_MARKER = "# Managed by the ticket-index installer"
+
+
+def git_hooks_dir(target: Path) -> Path | None:
+    """Hooks directory backing ``target``'s repository, if any."""
+    dot_git = target / ".git"
+    if dot_git.is_dir():
+        return dot_git / "hooks"
+    if dot_git.is_file():
+        for line in dot_git.read_text(encoding="utf-8").splitlines():
+            stripped = line.strip()
+            if stripped.startswith("gitdir:"):
+                gitdir = Path(stripped.partition(":")[2].strip())
+                if not gitdir.is_absolute():
+                    gitdir = target / gitdir
+                return gitdir / "hooks"
+    return None
+
+
+def install_git_hooks(target: Path, dest_skills: Path) -> str:
+    """Install ``post-merge`` and ``post-checkout`` hooks that re-render the index.
+
+    The hooks are best-effort conveniences: they keep the index fresh after a
+    merge or a branch switch, which is exactly when a stale index hides other
+    people's work. They never overwrite a user's existing hook (one without the
+    installer's marker) and never fail the git operation. Returns a status line.
+    """
+    hooks_dir = git_hooks_dir(target)
+    if hooks_dir is None:
+        return (
+            f"skipped git hooks ({target.name} is not a git repository; "
+            "re-run with --install-git-hooks inside a clone)"
+        )
+
+    skills_rel = dest_skills.relative_to(target).as_posix()
+    content = GIT_HOOK_TEMPLATE.format(skills_rel=skills_rel)
+    try:
+        hooks_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        return f"warning: could not create {hooks_dir}: {exc}"
+    installed: list[str] = []
+    skipped: list[str] = []
+    for name in ("post-merge", "post-checkout"):
+        hook_path = hooks_dir / name
+        try:
+            existing = hook_path.read_text(encoding="utf-8") if hook_path.is_file() else ""
+        except OSError as exc:
+            return f"warning: could not read {hook_path}: {exc}"
+        if existing and GIT_HOOK_MARKER not in existing:
+            skipped.append(name)
+            continue
+        if existing == content:
+            installed.append(name)
+            continue
+        try:
+            hook_path.write_text(content, encoding="utf-8", newline="\n")
+            try:
+                os.chmod(hook_path, 0o755)
+            except OSError:
+                pass
+            installed.append(name)
+        except OSError as exc:
+            return f"warning: could not write {hook_path}: {exc}"
+
+    message = "installed git hooks: " + (", ".join(installed) or "(none)")
+    if skipped:
+        message += "; kept existing hooks: " + ", ".join(skipped)
+    return message
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--target", help="Repository root to install into")
@@ -180,6 +368,11 @@ def main() -> int:
         "--install-hooks",
         action="store_true",
         help="Merge the ticket-index hook into <target>/.cursor/hooks.json",
+    )
+    parser.add_argument(
+        "--install-git-hooks",
+        action="store_true",
+        help="Write post-merge and post-checkout hooks that re-render the index",
     )
     parser.add_argument("--list", action="store_true", help="List bundled skills and exit")
     args = parser.parse_args()
@@ -222,6 +415,11 @@ def main() -> int:
         hooks_path = install_hooks(target, dest_skills)
         print(f"Merged ticket-index hooks into {hooks_path}")
         print("Restart Cursor (or start a new session) so it loads the hook config.")
+
+    print()
+    print(install_git_merge(target))
+    if args.install_git_hooks:
+        print(install_git_hooks(target, dest_skills))
 
     print()
     print("Next steps:")

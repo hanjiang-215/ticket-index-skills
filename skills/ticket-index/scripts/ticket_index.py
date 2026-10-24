@@ -11,6 +11,7 @@ Commands:
     check   validate config and generated files (exit 1 on problems)
     diff    show what render would change, without writing
     render  write INDEX.md and modules/*.md
+    new-id  print one unused ticket id for parallel ticket creation
 
 Only the Python standard library is required (Python 3.11+ for ``tomllib``).
 """
@@ -21,6 +22,7 @@ import argparse
 import difflib
 import hashlib
 import os
+import random
 import re
 import sys
 import tempfile
@@ -1015,6 +1017,71 @@ def cmd_facts(index: Index) -> int:
     return 0
 
 
+# Suffix alphabet is intentionally small (letters + digits) to match the kit's
+# conventional `-[0-9a-z]{4}` suffix; ``new-id`` re-checks against the configured
+# id_pattern, so a tighter pattern still yields valid ids.
+NEW_ID_SUFFIX_ALPHABET = "abcdefghijklmnopqrstuvwxyz0123456789"
+NEW_ID_SUFFIX_LITERAL = "-[0-9a-z]{4}"
+
+
+def cmd_new_id(index: Index, prefix: str | None) -> int:
+    """Print one ticket id that is not yet used in the configured ticket store.
+
+    This is the coordination guard for parallel ticket creation: two sessions that
+    both call ``new-id`` on the same branch cannot silently pick the same filename.
+    It reads existing ids from the tickets directory (never the network), so the
+    guarantee is local; cross-branch collisions surface as a normal merge conflict
+    on the ticket file and are resolved by renaming one side.
+    """
+    tickets_dir = index.settings.tickets_dir
+    existing: set[str] = set()
+    if tickets_dir.is_dir():
+        for path in tickets_dir.glob("*.md"):
+            if path.stem.lower() == "readme":
+                continue
+            if index.id_pattern.fullmatch(path.stem):
+                existing.add(path.stem)
+
+    if prefix is None:
+        pattern_text = index.settings.id_pattern
+        if pattern_text.endswith(NEW_ID_SUFFIX_LITERAL):
+            head = pattern_text[: -len(NEW_ID_SUFFIX_LITERAL)]
+            if head and not re.search(r"[\[\]\\?*+^$.{}()|]", head):
+                prefix = head
+    if prefix is None:
+        print(
+            "Cannot infer a literal prefix from id_pattern; pass --prefix, "
+            "e.g. --prefix app.",
+            file=sys.stderr,
+        )
+        return 2
+
+    mismatch = 0
+    for _ in range(200):
+        suffix = "".join(random.choice(NEW_ID_SUFFIX_ALPHABET) for _ in range(4))
+        candidate = f"{prefix}-{suffix}"
+        if candidate in existing:
+            continue
+        if not index.id_pattern.fullmatch(candidate):
+            mismatch += 1
+            if mismatch >= 50:
+                print(
+                    f"The prefix `{prefix}` does not produce ids matching "
+                    f"id_pattern `{index.settings.id_pattern}`.",
+                    file=sys.stderr,
+                )
+                return 1
+            continue
+        print(candidate)
+        return 0
+    print(
+        "Could not mint a fresh id after 200 attempts; every candidate collided "
+        "with an existing id.",
+        file=sys.stderr,
+    )
+    return 1
+
+
 def main() -> int:
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
@@ -1023,7 +1090,14 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", help="Path to ticket-index.toml (default: search upward)")
     parser.add_argument(
-        "command", nargs="?", choices=["facts", "check", "diff", "render"], default="check"
+        "--prefix",
+        help="Ticket id prefix for `new-id` (default: inferred from id_pattern)",
+    )
+    parser.add_argument(
+        "command",
+        nargs="?",
+        choices=["facts", "check", "diff", "render", "new-id"],
+        default="check",
     )
     args = parser.parse_args()
 
@@ -1037,6 +1111,8 @@ def main() -> int:
         return cmd_diff(index)
     if args.command == "render":
         return cmd_render(index)
+    if args.command == "new-id":
+        return cmd_new_id(index, args.prefix)
     return cmd_check(index)
 
 
